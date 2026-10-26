@@ -79,4 +79,4 @@ print(len(a.materials), len(b.materials))
 
 ## Credits
 
-Written to build an ND2 Miata RF car mod on macOS. The ksEditor behaviour was worked out by comparing its output with this tool's and by analysing the editor's FBX import code.
+Written to build Assetto Corsa car mods on non-PC platforms that can't run ksEditor. The ksEditor behaviour was worked out by comparing its output with this tool's and by analysing the editor's FBX import code.
