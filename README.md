@@ -4,12 +4,13 @@ Build Assetto Corsa cars without the Windows-only tools:
 
 - **`fbx2kn5.py`** compiles `.kn5` model files from an FBX, without ksEditor.
 - **`render_previews.py`** renders each skin's `preview.jpg`, without Content Manager's showroom. See [Skin previews](#skin-previews).
+- **`acd.py`** packs a car's `data/` folder into `data.acd`, and unpacks it, without Content Manager. See [Car data (`data.acd`)](#car-data-dataacd).
 
 ksEditor only runs on Windows. `fbx2kn5.py` does its "Save kn5" step in plain Python, so you can build car models on macOS or Linux, or in CI. It reproduces ksEditor's output: on the cars it was tested with, every mesh comes out byte-identical to the kn5 ksEditor writes.
 
 ## Requirements
 
-`fbx2kn5.py`: Python 3.8 or newer. Only the standard library is used, so there is nothing to install.
+`fbx2kn5.py` and `acd.py`: Python 3.8 or newer. Only the standard library is used, so there is nothing to install.
 
 `render_previews.py`: [uv](https://docs.astral.sh/uv/) and OpenGL 4.1. See [Skin previews](#skin-previews).
 
@@ -124,7 +125,7 @@ A preview takes about a second on a Mac, and around 6 seconds with Mesa's softwa
   - `ambient_shadows.ini` places `body_shadow.png` and `tyre_N_shadow.png` under the car;
   - the car is set on the ground by its wheels.
 
-  `data.acd` is not read. If your car only has `data.acd`, unpack it (for example with Content Manager) so a `data/` folder sits next to it. Without one, the preview still renders, but without ambient shadows and with the kn5's default rims.
+  `data.acd` is not read. If your car only has `data.acd`, unpack it with `python3 acd.py --unpack mycar` (see [Car data](#car-data-dataacd)) so a `data/` folder sits next to it. Without one, the preview still renders, but without ambient shadows and with the kn5's default rims.
 - **Custom Shaders Patch config**: `extension/ext_config.ini` and `skins/<skin>/ext_config.ini`. Meshes that CSP hides for a skin are hidden in its preview too:
   - `[MODEL_REPLACEMENT_...]` sections with `HIDE`, filtered by `FILE`, `SKINS` and `ACTIVE`;
   - `[MESH_ADJUSTMENT_...]` sections with `IS_RENDERABLE = 0`.
@@ -149,6 +150,43 @@ Like Content Manager, it hides the cockpit LOD, the steering wheel LOD, fastened
 - Side windows look darker than in Content Manager, which lights the cabin behind the glass more.
 - Only the dark-studio default is imitated. Content Manager's other preview presets and showrooms are not.
 
+## Car data (`data.acd`)
+
+A car's physics and setup files (`car.ini`, `engine.ini`, `suspensions.ini`, `tyres.ini`, the `.lut` curves and so on) live in its `data/` folder. `data.acd` is the same files packed into one archive, lightly encrypted with a key derived from the car's folder name.
+
+- Assetto Corsa and Content Manager read `data.acd` whenever it exists and ignore `data/`, so a change to `data/` does nothing in game until you repack.
+- Online servers checksum `data.acd`, so every player on a server needs the same file.
+
+`acd.py` packs and unpacks it, like Content Manager's "Pack data" and "Unpack data", without Windows:
+
+```sh
+python3 acd.py mycar                 # pack mycar/data/ into mycar/data.acd
+python3 acd.py --unpack mycar        # unpack mycar/data.acd into mycar/data/
+python3 acd.py car_one car_two       # several cars at once
+```
+
+| Option | Meaning |
+|---|---|
+| `cars` | One or more car folders, named exactly as they will be installed. |
+| `--unpack` | Unpack `data.acd` into `data/` instead of packing. Existing files in `data/` with the same names are overwritten. |
+
+- **Folder name:** the key comes from the car folder's name, so pack inside a folder named exactly like the installed car (for example `content/cars/mycar`). A `data.acd` packed under another name won't load in game.
+- **Faithful packing:** files are packed byte for byte (line endings included) in Content Manager's order, so unpacking and repacking a Content Manager-made `data.acd` gives back the same file.
+- **Kunos files:** newer Kunos `data.acd` files start with an extra header; `acd.py` reads them, and writes without the header, as Content Manager does.
+- **Releases:** if you ship releases from a script or CI, pack `data.acd` as a build step, so it always matches `data/`. You can then leave `data/` out of the release, since the game doesn't read it.
+
+You can also use it from Python:
+
+```python
+import acd
+
+entries = acd.read("mycar/data.acd")          # [(name, bytes)], key from the folder name
+print(dict(entries)["car.ini"].decode()[:200])
+acd.write("mycar/data.acd", entries)
+```
+
+The format and key derivation were checked against two dozen `data.acd` files from Kunos cars and mods: all decrypt to valid text, and Content Manager-made files are rewritten byte for byte.
+
 ## Files
 
 | File | Purpose |
@@ -162,6 +200,7 @@ Like Content Manager, it hides the cockpit LOD, the steering wheel LOD, fastened
 | `preview_scene.py` | Preview scene: loads the car, applies skin and CSP visibility, grounds it, sets up the camera. |
 | `preview_gl.py` | OpenGL renderer: shading, shadows, studio, bloom and tone mapping. |
 | `textures.py` | Decodes DDS (compressed and uncompressed), PNG and JPG textures. |
+| `acd.py` | Command line tool and module: `data.acd` reader and writer, with the folder-name key. |
 | `pyproject.toml`, `uv.lock` | Python dependencies for the preview renderer (managed with uv). |
 
 ## Credits
