@@ -1,12 +1,17 @@
 # fbx-to-kn5-tool
 
-Compile Assetto Corsa `.kn5` model files from an FBX, without ksEditor.
+Build Assetto Corsa cars without the Windows-only tools:
 
-ksEditor only runs on Windows. This tool does its "Save kn5" step in plain Python, so you can build car models on macOS or Linux, or in CI. It reproduces ksEditor's output: on the cars it was tested with, every mesh comes out byte-identical to the kn5 ksEditor writes.
+- **`fbx2kn5.py`** compiles `.kn5` model files from an FBX, without ksEditor.
+- **`render_previews.py`** renders each skin's `preview.jpg`, without Content Manager's showroom. See [Skin previews](#skin-previews).
+
+ksEditor only runs on Windows. `fbx2kn5.py` does its "Save kn5" step in plain Python, so you can build car models on macOS or Linux, or in CI. It reproduces ksEditor's output: on the cars it was tested with, every mesh comes out byte-identical to the kn5 ksEditor writes.
 
 ## Requirements
 
-Python 3.8 or newer. Only the standard library is used, so there is nothing to install.
+`fbx2kn5.py`: Python 3.8 or newer. Only the standard library is used, so there is nothing to install.
+
+`render_previews.py`: [uv](https://docs.astral.sh/uv/) and OpenGL 4.1. See [Skin previews](#skin-previews).
 
 ## Usage
 
@@ -67,6 +72,83 @@ b = kn5.read("tool_build.kn5")
 print(len(a.materials), len(b.materials))
 ```
 
+## Skin previews
+
+`render_previews.py` renders the `skins/<skin>/preview.jpg` images Content Manager shows when you pick a car's colour. It imitates Content Manager's default dark-studio preview: the same camera and 1022x575 size, the same material shading and filmic tone mapping. A procedural studio stands in for the showroom. The look was fitted against previews rendered by Content Manager, and comes out within about 5/255 per pixel on average. It doesn't use any Content Manager or Kunos files.
+
+### Setup
+
+Install [uv](https://docs.astral.sh/uv/). It installs the Python dependencies (moderngl, numpy, Pillow) from `pyproject.toml` and `uv.lock` the first time you run the script.
+
+The renderer needs OpenGL 4.1:
+
+- **macOS**: built in.
+- **Windows**: should work with any current GPU driver (not tested).
+- **Linux without a display (CI, servers)**: Mesa's software renderer over EGL. On Ubuntu or Debian:
+
+  ```sh
+  sudo apt-get install libegl1 libgl1 libgl1-mesa-dri
+  ```
+
+  The script tries the normal context first and falls back to EGL by itself.
+
+### Usage
+
+Render every skin of one or more cars, writing each skin's `preview.jpg` in place:
+
+```sh
+uv run render_previews.py path/to/mycar path/to/myothercar
+```
+
+Render some skins only, or write a single skin somewhere else:
+
+```sh
+uv run render_previews.py path/to/mycar --skin red --skin blue
+uv run render_previews.py path/to/mycar --skin red --out red.jpg
+```
+
+| Option | Meaning |
+|---|---|
+| `cars` | One or more car folders (the folder holding the kn5 files, `data/` and `skins/`). |
+| `--skin` | Render only this skin. Repeat it for several. Default: every folder in `skins/`. |
+| `--out` | Write the image here instead of `skins/<skin>/preview.jpg`. Use it with a single `--skin`. |
+
+A preview takes about a second on a Mac, and around 6 seconds with Mesa's software renderer.
+
+### What it reads from the car
+
+- **The model**: the `LOD_0` file from `data/lods.ini`, or the first kn5 in the folder if there is no `lods.ini`.
+- **Skins**: textures in `skins/<skin>/` replace the kn5's textures of the same name.
+- **Car data** from the unpacked `data/` folder, as Content Manager uses it:
+  - `blurred_objects.ini` picks the rims shown at standstill;
+  - `ambient_shadows.ini` places `body_shadow.png` and `tyre_N_shadow.png` under the car;
+  - the car is set on the ground by its wheels.
+
+  `data.acd` is not read. If your car only has `data.acd`, unpack it (for example with Content Manager) so a `data/` folder sits next to it. Without one, the preview still renders, but without ambient shadows and with the kn5's default rims.
+- **Custom Shaders Patch config**: `extension/ext_config.ini` and `skins/<skin>/ext_config.ini`. Meshes that CSP hides for a skin are hidden in its preview too:
+  - `[MODEL_REPLACEMENT_...]` sections with `HIDE`, filtered by `FILE`, `SKINS` and `ACTIVE`;
+  - `[MESH_ADJUSTMENT_...]` sections with `IS_RENDERABLE = 0`.
+
+  A "roof off" skin, for example, gets a roof-off preview. Content Manager's showroom ignores this config.
+
+Like Content Manager, it hides the cockpit LOD, the steering wheel LOD, fastened seatbelts and broken glass.
+
+### Using it in GitHub Actions
+
+```yaml
+- uses: astral-sh/setup-uv@v6
+- name: Install OpenGL
+  run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libgl1-mesa-dri
+- name: Render skin previews
+  run: uv run render_previews.py mycar
+```
+
+### Known differences from Content Manager
+
+- Reflections come from a simple studio light setup, not the showroom's reflection map, so highlights on paint and glass differ slightly.
+- Side windows look darker than in Content Manager, which lights the cabin behind the glass more.
+- Only the dark-studio default is imitated. Content Manager's other preview presets and showrooms are not.
+
 ## Files
 
 | File | Purpose |
@@ -76,7 +158,12 @@ print(len(a.materials), len(b.materials))
 | `ksmesh.py` | ksEditor's float32 mesh building: vertex merging, tangents, bounding spheres. |
 | `fbx.py` | Minimal binary FBX (7.x) reader. |
 | `kn5.py` | kn5 (version 6) reader and writer. It writes back a file it has read byte for byte. |
+| `render_previews.py` | Command line tool: renders skin preview images. |
+| `preview_scene.py` | Preview scene: loads the car, applies skin and CSP visibility, grounds it, sets up the camera. |
+| `preview_gl.py` | OpenGL renderer: shading, shadows, studio, bloom and tone mapping. |
+| `textures.py` | Decodes DDS (compressed and uncompressed), PNG and JPG textures. |
+| `pyproject.toml`, `uv.lock` | Python dependencies for the preview renderer (managed with uv). |
 
 ## Credits
 
-Written to build Assetto Corsa car mods on non-PC platforms that can't run ksEditor. The ksEditor behaviour was worked out by comparing its output with this tool's and by analysing the editor's FBX import code.
+Written to build Assetto Corsa car mods on non-PC platforms that can't run ksEditor. The ksEditor behaviour was worked out by comparing its output with this tool's and by analysing the editor's FBX import code. The preview renderer follows the shading, shadows and tone mapping of Content Manager's open-source renderer ([AcTools.Render](https://github.com/gro-ove/actools)).
