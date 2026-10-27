@@ -1,0 +1,13 @@
+[project]
+name = "fbx-to-kn5-tool"
+version = "0.2.0"
+description = "Assetto Corsa tools without ksEditor or Content Manager: FBX to kn5 compiler and skin preview renderer"
+requires-python = ">=3.11"
+dependencies = [
+    "moderngl>=5.10",
+    "numpy>=1.26",
+    "pillow>=10.0",
+]
+
+[tool.uv]
+package = false
