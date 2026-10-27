@@ -512,6 +512,17 @@ class Renderer:
                 self._tex_cache[key] = None
         return self._tex_cache[key]
 
+    def _ambient_shadow_texture(self, path):
+        # Kept for the renderer's lifetime: releasing textures between renders makes macOS's driver
+        # log "texture unloadable" on the next frame.
+        key = ("ambient", os.path.abspath(path))
+        if key not in self._tex_cache:
+            with open(path, "rb") as f:
+                tex = self._make_texture(textures.decode(f.read()))
+            tex.repeat_x = tex.repeat_y = False
+            self._tex_cache[key] = tex
+        return self._tex_cache[key]
+
     def _mesh_vao(self, mesh, prog, cols):
         key = (id(mesh), id(prog))
         vao = self._vaos.get(key)
@@ -608,14 +619,10 @@ class Renderer:
         self.shadow_prog["uOpacity"].value = LOOK["shadow_op"]
         self.shadow_prog["txDiffuse"].value = 0
         for name, matrix in car.ambient_shadows():
-            with open(os.path.join(car.dir, name), "rb") as f:
-                tex = self._make_texture(textures.decode(f.read()))
-            tex.repeat_x = tex.repeat_y = False
-            tex.use(0)
+            self._ambient_shadow_texture(os.path.join(car.dir, name)).use(0)
             self.shadow_prog["uWorld"].write(_f32(matrix))
             self.shadow_prog["uWVP"].write(_f32(matrix @ vp))
             ctx.vertex_array(self.shadow_prog, [(self.quad, "3f 2f", "in_pos", "in_uv")]).render()
-            tex.release()
         ctx.polygon_offset = (0.0, 0.0)
         ctx.depth_mask = True
         ctx.disable(moderngl.BLEND)
